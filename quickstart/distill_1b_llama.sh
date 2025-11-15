@@ -63,7 +63,7 @@ echo "RUN_ID: $RUN_ID"
 echo "start time: $(date)"
 echo "========================"
 
-python -u multihost_runner_orig.py \
+python -u multihost_runner.py \
     --TPU_PREFIX=$TPU_PREFIX \
     --INTERNAL_IP=true \
     --COMMAND="

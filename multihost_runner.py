@@ -1,18 +1,16 @@
-"""
- Copyright 2023 Google LLC
-
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
-
-      https://www.apache.org/licenses/LICENSE-2.0
-
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
- """
+# Copyright 2023–2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 from tempfile import gettempdir
 
 from MaxText.globals import PKG_DIR
@@ -52,24 +50,18 @@ import re
 
 ##### Define flags #####
 def get_project():
-  try:
-    completed_command = subprocess.run(["gcloud", "config", "get", "project"], check=True, capture_output=True)
-    project_outputs = completed_command.stdout.decode().strip().split('\n')
-    if len(project_outputs) < 1 or project_outputs[-1]=='':
-      sys.exit("You must specify the project in the PROJECT flag or set it with 'gcloud config set project <project>'")
-    return project_outputs[-1] # The project name lives on the last line of the output
-  except:
-    return 'vision-mix'
+  completed_command = subprocess.run(["gcloud", "config", "get", "project"], check=True, capture_output=True)
+  project_outputs = completed_command.stdout.decode().strip().split('\n')
+  if len(project_outputs) < 1 or project_outputs[-1]=='':
+    sys.exit("You must specify the project in the PROJECT flag or set it with 'gcloud config set project <project>'")
+  return project_outputs[-1] # The project name lives on the last line of the output
 
 def get_zone():
-  try:
-    completed_command = subprocess.run(["gcloud", "config", "get", "compute/zone"], check=True, capture_output=True)
-    zone_outputs = completed_command.stdout.decode().strip().split('\n')
-    if len(zone_outputs) < 1 or zone_outputs[-1]=='':
-      sys.exit("You must specify the zone in the ZONE flag or set it with 'gcloud config set compute/zone <zone>'")
-    return zone_outputs[-1] # The zone name lives on the last line of the output
-  except:
-    return 'us-east1-d'
+  completed_command = subprocess.run(["gcloud", "config", "get", "compute/zone"], check=True, capture_output=True)
+  zone_outputs = completed_command.stdout.decode().strip().split('\n')
+  if len(zone_outputs) < 1 or zone_outputs[-1]=='':
+    sys.exit("You must specify the zone in the ZONE flag or set it with 'gcloud config set compute/zone <zone>'")
+  return zone_outputs[-1] # The zone name lives on the last line of the output
 
 def default_run_name():
   now = datetime.now()
@@ -162,8 +154,20 @@ def filter_instances(instance_list, tpu_prefix):
       return [instance]
 
   # If no exact match, reg-exp full match "<tpu_prefx>-[0-9]+"
-  re_pattern = tpu_prefix + "-[0-9]+"
-  return [instance for instance in instance_list if re.fullmatch(re_pattern, instance.split(',')[0])]
+  # re_pattern = tpu_prefix + "-[0-9]+"
+  # return [instance for instance in instance_list if re.fullmatch(re_pattern, instance.split(',')[0])]
+
+  # If no exact match, try hyphen-suffix "<tpu_prefix>-[0-9]+"
+  re_pattern_dash = tpu_prefix + "-[0-9]+"
+  print(f"Trying underscore-suffix pattern: {re_pattern_dash}")
+  matches = [instance for instance in instance_list if re.fullmatch(re_pattern_dash, instance.split(',')[0])]
+  if matches:
+    return matches
+
+  # Fallback: try underscore-suffix "<tpu_prefix>_[0-9]+"
+  re_pattern_underscore = tpu_prefix + "_[0-9]+"
+  print(f"Trying underscore-suffix pattern: {re_pattern_underscore}")
+  return [instance for instance in instance_list if re.fullmatch(re_pattern_underscore, instance.split(',')[0])]
 
 def write_kill_script(kill_processes_script_name):
   kill_processes_script = os.path.join(args.SCRIPT_DIR, kill_processes_script_name)
@@ -211,10 +215,10 @@ def scps(slices, run_name_dir, zip_name):
   worker_list = []
   for cur_slice in slices:
     for worker_num in range(cur_slice.num_workers):
-      print(cur_slice.name)
+      print('scp to worker ', worker_num)
       command = [
           "gcloud", "compute", "tpus", "tpu-vm", "scp", f"--worker={worker_num}", zip_path,
-          f"{cur_slice.name}:/home/zephyr/", "--strict-host-key-checking=no", f"--project={args.PROJECT}", f"--zone={args.ZONE}"
+          f"{cur_slice.name}:~/", "--strict-host-key-checking=no", f"--project={args.PROJECT}", f"--zone={args.ZONE}", "--quiet"
       ]
       if args.INTERNAL_IP:
         command.append("--internal-ip")
@@ -242,10 +246,10 @@ def execute_main_command(main_command, slices, local_log_dir, zip_name):
     for worker_num in range(cur_slice.num_workers):
       output_filename = os.path.join(local_log_dir, f"output_slice_{cur_slice.slice_num:04d}_worker_{worker_num:04d}.txt")
       output_logs.append(output_filename)
-      mkdir_command = f"cd /home/zephyr"
-      mv_zip_command = f"cd /home/zephyr" # && mv {zip_name} /home/zephyr"
-      cd_command = f"cd /home/zephyr"
-      unzip_command = f"tar xzf {zip_name} -C /home/zephyr/maxtext"
+      mkdir_command = f"mkdir -p {args.RUN_NAME}"
+      mv_zip_command = f"mv {zip_name} {args.RUN_NAME}"
+      cd_command = f"cd {args.RUN_NAME}"
+      unzip_command = f"tar xzf {zip_name}"
       write_kill_script_command = f"echo '{kill_existing_processes_str()}' > {kill_script_name}"
       kill_existing_command = f"bash {kill_script_name} {cur_slice.version}"
 
@@ -255,10 +259,11 @@ def execute_main_command(main_command, slices, local_log_dir, zip_name):
       else:
         remote_command_list = [cd_command, write_kill_script_command , kill_existing_command , main_command]
       remote_command_list_str = " && ".join(remote_command_list)
+      print('ssh to worker ', worker_num)
       gcloud_command=[
           "gcloud", "alpha", "compute", "tpus", "tpu-vm", "ssh", cur_slice.name, f"--worker={worker_num}",
           "--command", remote_command_list_str, "--strict-host-key-checking=no",
-          f"--project={args.PROJECT}", f"--zone={args.ZONE}"]
+          f"--project={args.PROJECT}", f"--zone={args.ZONE}", "--quiet"]
       if args.INTERNAL_IP:
         gcloud_command.append("--internal-ip")
       commands.append(gcloud_command)
@@ -389,8 +394,7 @@ def main() -> None:
     print(f"Failed to retrieve slices {args.TPU_PREFIX} in project {args.PROJECT} zone {args.ZONE}", flush=True)
     return 1
 
-  # temp_dir = gettempdir()
-  temp_dir = '/home/zephyr/tmp'
+  temp_dir = gettempdir()
   local_log_dir = os.path.join(temp_dir, args.RUN_NAME, "")
   zip_name = f"script_dir_zip_{args.RUN_NAME}.tar.gz"
 
